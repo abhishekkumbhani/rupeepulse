@@ -1,0 +1,17 @@
+# Build & Distribution Artifacts
+*.zip
+dist_temp/
+
+# Scratch & Testing Scripts
+test_extension.js
+
+# Dependencies
+node_modules/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.vscode/
+.idea/

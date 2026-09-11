@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src https://www.xe.com; object-src 'none';">
+  <title>RupeePulse - Live USD/INR &amp; EUR/INR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="app-container">
+    <!-- Standalone Preview Banner (Subtle & Flat) -->
+    <div id="previewBanner" class="preview-banner hidden">
+      <div class="banner-inner">
+        <span class="banner-dot"></span>
+        <span class="banner-text"><strong>Preview Mode:</strong> Background sync active in Chrome toolbar.</span>
+      </div>
+      <button id="btnDismissBanner" class="banner-close" aria-label="Dismiss banner">✕</button>
+    </div>
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <img src="icons/icon-35.png" width="35" height="35" alt="RupeePulse" class="brand-icon-img">
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">
+            <span>RupeePulse</span>
+          </div>
+          <div class="live-status">
+            <span class="status-text">XE Mid-Market • Live</span>
+            <span class="status-sep">•</span>
+            <span id="countdownChipText" class="countdown-badge" title="Time until next auto-sync">--s</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Refresh Button -->
+        <button id="btnRefresh" class="action-btn" title="Refresh Rates" aria-label="Refresh Rates">
+          <svg class="icon-refresh" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" />
+          </svg>
+        </button>
+
+        <!-- More Options (Three-Dots Menu) -->
+        <div class="menu-container">
+          <button id="btnHeaderMenu" class="action-btn" title="Options & Settings" aria-label="Open menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="1"></circle>
+              <circle cx="19" cy="12" r="1"></circle>
+              <circle cx="5" cy="12" r="1"></circle>
+            </svg>
+          </button>
+
+          <!-- Floating Action Popover -->
+          <div id="headerMenuPopover" class="header-popover hidden">
+            <!-- Theme Toggle Item -->
+            <button class="popover-item" id="popoverThemeToggle" type="button">
+              <div class="popover-item-left">
+                <svg class="popover-icon icon-theme-sun hidden" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+                </svg>
+                <svg class="popover-icon icon-theme-moon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+                </svg>
+                <span>Theme</span>
+              </div>
+              <span id="popoverThemeLabel" class="popover-pill">Dark</span>
+            </button>
+
+            <!-- Sound Alert Toggle Item -->
+            <button class="popover-item" id="popoverSoundToggle" type="button">
+              <div class="popover-item-left">
+                <svg class="popover-icon icon-sound-on" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+                <svg class="popover-icon icon-sound-off hidden" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <line x1="23" y1="9" x2="17" y2="15"></line>
+                  <line x1="17" y1="9" x2="23" y2="15"></line>
+                </svg>
+                <span>Alert Sound</span>
+              </div>
+              <span id="popoverSoundLabel" class="popover-pill active">On</span>
+            </button>
+
+            <div class="popover-divider"></div>
+
+            <!-- Preferences / Settings Item -->
+            <button class="popover-item" id="popoverSettingsToggle" type="button">
+              <div class="popover-item-left">
+                <svg class="popover-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                <span>Preferences</span>
+              </div>
+              <span class="popover-arrow">›</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Master Currency Segmented Switcher -->
+    <div class="market-ticker">
+      <button id="pillUsd" class="ticker-tab active" data-currency="usd">
+        <div class="ticker-header">
+          <!-- Vector US Flag -->
+          <svg class="flag-icon" viewBox="0 0 20 14" width="16" height="11">
+            <rect width="20" height="14" fill="#B22234" />
+            <rect y="1.08" width="20" height="1.08" fill="#FFFFFF" />
+            <rect y="3.23" width="20" height="1.08" fill="#FFFFFF" />
+            <rect y="5.38" width="20" height="1.08" fill="#FFFFFF" />
+            <rect y="7.54" width="20" height="1.08" fill="#FFFFFF" />
+            <rect y="9.69" width="20" height="1.08" fill="#FFFFFF" />
+            <rect y="11.85" width="20" height="1.08" fill="#FFFFFF" />
+            <rect width="8" height="7.54" fill="#3C3B6E" />
+            <circle cx="2" cy="1.9" r="0.5" fill="#FFFFFF" />
+            <circle cx="4" cy="1.9" r="0.5" fill="#FFFFFF" />
+            <circle cx="6" cy="1.9" r="0.5" fill="#FFFFFF" />
+            <circle cx="3" cy="3.8" r="0.5" fill="#FFFFFF" />
+            <circle cx="5" cy="3.8" r="0.5" fill="#FFFFFF" />
+            <circle cx="2" cy="5.7" r="0.5" fill="#FFFFFF" />
+            <circle cx="4" cy="5.7" r="0.5" fill="#FFFFFF" />
+            <circle cx="6" cy="5.7" r="0.5" fill="#FFFFFF" />
+          </svg>
+          <span class="pair-title">USD / INR</span>
+        </div>
+        <div class="ticker-meta">
+          <span id="pillUsdVal" class="ticker-rate">₹--.--</span>
+          <span id="pillUsdDelta" class="ticker-delta neutral">0.00%</span>
+        </div>
+      </button>
+
+      <button id="pillEur" class="ticker-tab" data-currency="eur">
+        <div class="ticker-header">
+          <!-- Vector EU Flag -->
+          <svg class="flag-icon" viewBox="0 0 20 14" width="16" height="11">
+            <rect width="20" height="14" fill="#003399" />
+            <circle cx="10" cy="3" r="0.5" fill="#FFCC00" />
+            <circle cx="10" cy="11" r="0.5" fill="#FFCC00" />
+            <circle cx="6" cy="7" r="0.5" fill="#FFCC00" />
+            <circle cx="14" cy="7" r="0.5" fill="#FFCC00" />
+            <circle cx="7.2" cy="4.2" r="0.5" fill="#FFCC00" />
+            <circle cx="12.8" cy="4.2" r="0.5" fill="#FFCC00" />
+            <circle cx="7.2" cy="9.8" r="0.5" fill="#FFCC00" />
+            <circle cx="12.8" cy="9.8" r="0.5" fill="#FFCC00" />
+          </svg>
+          <span class="pair-title">EUR / INR</span>
+        </div>
+        <div class="ticker-meta">
+          <span id="pillEurVal" class="ticker-rate">₹--.--</span>
+          <span id="pillEurDelta" class="ticker-delta neutral">0.00%</span>
+        </div>
+      </button>
+    </div>
+
+    <!-- Active Currency Hero Canvas -->
+    <main class="hero-card">
+      <div class="hero-top-row">
+        <div class="pair-info-group">
+          <span id="mainPairLabel" class="pair-name">US Dollar to Indian Rupee</span>
+          <span class="base-badge" id="mainBaseTag">1.00 USD</span>
+        </div>
+        <div id="mainChangeBadge" class="delta-badge neutral">0.00%</div>
+      </div>
+
+      <!-- Hero Exchange Rate Display -->
+      <div class="hero-rate-row">
+        <div class="rate-display-container">
+          <span class="currency-symbol">₹</span>
+          <span id="mainRateValue" class="rate-digits">--.<span class="rate-cents">----</span></span>
+        </div>
+
+        <!-- One-Click Copy Button with Tooltip -->
+        <div class="copy-wrapper">
+          <button id="btnCopyRate" class="btn-copy" title="Copy exact rate" aria-label="Copy rate">
+            <svg class="icon-copy" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span class="copy-label">Copy</span>
+          </button>
+          <div id="copyFeedback" class="copy-tooltip hidden">Copied!</div>
+        </div>
+      </div>
+
+      <!-- Inverse Rate Quick Reference -->
+      <div class="inverse-rate-bar">
+        <span class="inverse-label">Inverse Rate:</span>
+        <span id="inverseRateDisplay" class="inverse-val">1 INR = $0.01050 USD</span>
+      </div>
+
+      <!-- 24h Session Range Gauge -->
+      <div class="session-range">
+        <div class="range-legend">
+          <span class="range-point range-point-low">
+            <span class="range-lbl"><span class="point-dir">▼</span> 24h Low</span>
+            <strong id="rangeLowVal" class="val-loss">₹--.--</strong>
+          </span>
+          <span class="range-point range-point-high">
+            <span class="range-lbl"><span class="point-dir">▲</span> 24h High</span>
+            <strong id="rangeHighVal" class="val-gain">₹--.--</strong>
+          </span>
+        </div>
+        <div class="range-track">
+          <div id="rangeMarker" class="range-needle" title="Current Rate Position"></div>
+        </div>
+      </div>
+
+      <!-- Target Price Alert Configuration (Collapsible) -->
+      <div id="alertBox" class="alert-box collapsed">
+        <div class="alert-box-header" id="alertBoxHeader">
+          <div class="alert-title-wrap">
+            <svg class="alert-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="22" y1="12" x2="18" y2="12"></line>
+              <line x1="6" y1="12" x2="2" y2="12"></line>
+              <line x1="12" y1="6" x2="12" y2="2"></line>
+              <line x1="12" y1="22" x2="12" y2="18"></line>
+            </svg>
+            <span class="alert-title">Price Target Alert</span>
+            <span id="alertHeaderBadge" class="alert-header-badge inactive">Off</span>
+          </div>
+          <label class="flat-switch" title="Toggle Price Target Alert">
+            <input type="checkbox" id="activeAlertToggle">
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <!-- Collapsible Alert Body -->
+        <div id="alertBody" class="alert-body">
+          <div class="alert-inputs-row">
+            <div class="select-wrapper">
+              <select id="activeConditionSelect" class="form-select condition-select">
+                <option value=">=">≥ Rises to or Above</option>
+                <option value="<=">≤ Drops to or Below</option>
+              </select>
+            </div>
+
+            <div class="input-prefix-box" id="targetInputBox">
+              <span class="input-prefix">₹</span>
+              <input type="number" id="activeTargetInput" class="form-input" step="0.05" min="1" placeholder="e.g. 95.50">
+            </div>
+          </div>
+
+          <!-- Quick Set Delta Micro-Chips (Clean Single Row) -->
+          <div class="quick-row">
+            <span class="deltas-label">QUICK:</span>
+            <div class="quick-deltas">
+              <button class="delta-chip chip-negative" data-delta="-0.25" title="Set target 25p below current">-0.25</button>
+              <button class="delta-chip chip-negative" data-delta="-0.10" title="Set target 10p below current">-0.10</button>
+              <button class="delta-chip chip-positive" data-delta="+0.10" title="Set target 10p above current">+0.10</button>
+              <button class="delta-chip chip-positive" data-delta="+0.25" title="Set target 25p above current">+0.25</button>
+              <button class="delta-chip chip-current" data-action="current" title="Snap target to current rate">Current</button>
+            </div>
+          </div>
+
+          <!-- Alert Action Bar: Left = Compact Target Delta Readout, Right = Status + Save Button -->
+          <div class="alert-status-bar">
+            <!-- Left Side: Live Target Distance Readout -->
+            <div id="targetDeltaReadout" class="target-delta-box neutral" title="Difference between target and current market rate">
+              <span class="delta-amount">At market</span>
+              <span class="delta-pct">0.00%</span>
+            </div>
+
+            <!-- Right Side: Status Badge + Save Button -->
+            <div class="alert-actions-right">
+              <div id="activeAlertStatus" class="status-badge inactive">
+                <span class="badge-dot"></span>
+                <span class="indicator-text">Alert Disabled</span>
+              </div>
+              <button id="btnSaveAlert" class="btn-primary">Save Alert</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Feature-Rich Sub-Navigation Tabs (3 Tabs - 24h Trend First) -->
+    <nav class="tool-tabs">
+      <button class="tool-tab active" data-subtab="trend">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        <span>24h Trend</span>
+      </button>
+
+      <button class="tool-tab" data-subtab="converter">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 10h14l-4-4"></path>
+          <path d="M17 14H3l4 4"></path>
+        </svg>
+        <span>Converter</span>
+      </button>
+
+      <button class="tool-tab" data-subtab="stats">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+        <span>Market Stats</span>
+      </button>
+    </nav>
+
+    <!-- Sub-Tab Content Panels -->
+    <div class="tool-panels">
+      <!-- 1. Trend Panel (Default Active) -->
+      <section id="panelTrend" class="tool-panel active">
+        <div class="trend-card">
+          <div class="trend-top">
+            <!-- Default Static Header -->
+            <div id="trendDefaultHeader" class="trend-header-row">
+              <div class="trend-title-wrap">
+                <span class="trend-title">Trend</span>
+                <div class="timeframe-select-wrap">
+                  <select id="chartTimeframeSelect" class="timeframe-select" title="Chart timeframe">
+                    <option value="5m">5 Min</option>
+                    <option value="10m">10 Min</option>
+                    <option value="30m">30 Min</option>
+                    <option value="1h" selected>1 Hour</option>
+                    <option value="2h">2 Hours</option>
+                    <option value="6h">6 Hours</option>
+                    <option value="12h">12 Hours</option>
+                    <option value="24h">24h (Today)</option>
+                  </select>
+                </div>
+                <span class="trend-badge" id="chartPointsCount">80 pts</span>
+              </div>
+              <div class="trend-extremes">
+                <span class="extreme-pill low" title="Timeframe Low">
+                  <span class="extreme-tag">L</span>
+                  <span class="extreme-val" id="chartMinVal">₹--.--</span>
+                </span>
+                <span class="extreme-pill high" title="Timeframe High">
+                  <span class="extreme-tag">H</span>
+                  <span class="extreme-val" id="chartMaxVal">₹--.--</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Dynamic Hover Readout (Visible on cursor inspection) -->
+            <div id="trendHoverHeader" class="trend-hover-row hidden">
+              <div class="hover-price-group">
+                <span class="hover-label">Rate:</span>
+                <span id="hoverRateVal" class="hover-rate">₹--.----</span>
+              </div>
+              <div class="hover-time-group">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span id="hoverTimeVal" class="hover-time">Today, --:--</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="chart-container" id="chartContainer">
+            <svg id="sparklineSvg" class="chart-svg" viewBox="0 0 320 85" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--chart-fill)" stop-opacity="0.22" />
+                  <stop offset="100%" stop-color="var(--chart-fill)" stop-opacity="0.0" />
+                </linearGradient>
+              </defs>
+              <path id="sparklineArea" d="" fill="url(#chartGradient)" />
+              <path id="sparklineLine" d="" fill="none" stroke="var(--chart-line)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+
+              <!-- Current Position Live Pulse Dot -->
+              <circle id="chartPulseRing" class="chart-pulse-ring" cx="0" cy="0" r="3" />
+              <circle id="chartCurrentDot" class="chart-current-dot" cx="0" cy="0" r="3" />
+
+              <!-- Hover Crosshair & Point Indicator -->
+              <line id="chartCrosshair" class="chart-crosshair hidden" x1="0" y1="0" x2="0" y2="85" stroke="var(--border-strong)" stroke-width="1" stroke-dasharray="2 2" />
+              <circle id="chartHoverDot" class="chart-hover-dot hidden" cx="0" cy="0" r="4" fill="var(--chart-line)" stroke="var(--bg-card)" stroke-width="2" />
+            </svg>
+          </div>
+          <div class="chart-footer-bar">
+            <span class="chart-footer-meta">
+              <span class="live-pulse-dot-mini"></span>
+              <span id="chartFooterStatus">Live Feed • Today's Session</span>
+            </span>
+            <span class="chart-footer-hint">Hover chart to inspect</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Converter Panel -->
+      <section id="panelConverter" class="tool-panel">
+        <div class="converter-card">
+          <!-- Quick Amount Presets -->
+          <div class="preset-chips">
+            <span class="preset-label">Preset:</span>
+            <button class="preset-chip" id="btnPreset100" data-amount="100">100</button>
+            <button class="preset-chip" id="btnPreset500" data-amount="500">500</button>
+            <button class="preset-chip" id="btnPreset1k" data-amount="1000">1,000</button>
+            <button class="preset-chip" id="btnPreset5k" data-amount="5000">5,000</button>
+          </div>
+
+          <!-- From Row -->
+          <div class="converter-row">
+            <label class="field-label" for="convAmount">You Send</label>
+            <div class="input-currency-group">
+              <input type="number" id="convAmount" class="field-input" value="1000" min="0" step="any" placeholder="0.00">
+              <select id="convFromCurrency" class="currency-select">
+                <option value="USD" selected>USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="INR">INR (₹)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Swap Divider -->
+          <div class="swap-row">
+            <button id="btnSwapConverter" class="btn-swap" title="Swap currencies" aria-label="Swap">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 16V4m0 0L3 8m4-4 4 4m6 4v12m0 0 4-4m-4 4-4-4" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- To Row -->
+          <div class="converter-row">
+            <span class="field-label">You Receive (Mid-Market)</span>
+            <div class="input-currency-group">
+              <div id="convResultDisplay" class="result-display">₹0.00</div>
+              <select id="convToCurrency" class="currency-select">
+                <option value="INR" selected>INR (₹)</option>
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="converter-hint" id="convRateHint">
+            1 USD = ₹--.-- INR
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Market Stats Panel (Feature-Rich New Addition) -->
+      <section id="panelStats" class="tool-panel">
+        <div class="stats-card">
+          <div class="stats-grid">
+            <div class="stat-cell">
+              <span class="stat-label">24H High</span>
+              <span id="statsHighVal" class="stat-value">₹--.--</span>
+            </div>
+            <div class="stat-cell">
+              <span class="stat-label">24H Low</span>
+              <span id="statsLowVal" class="stat-value">₹--.--</span>
+            </div>
+            <div class="stat-cell">
+              <span class="stat-label">24H Spread</span>
+              <span id="statsSpreadVal" class="stat-value">₹--.--</span>
+            </div>
+            <div class="stat-cell">
+              <span class="stat-label">Volatility</span>
+              <span id="statsVolatilityVal" class="stat-value">--.--%</span>
+            </div>
+          </div>
+
+          <div class="stats-footer-note">
+            <span class="note-badge">VERIFIED</span>
+            <span id="statsSourceTag">Data source: XE Live Midmarket Exchange Feed</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Settings Overlay Drawer -->
+    <div id="settingsDrawer" class="settings-modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Preferences & Controls</h3>
+          <button id="btnCloseSettings" class="btn-close-modal" aria-label="Close preferences">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Appearance</span>
+              <span class="setting-desc">Interface light or dark theme</span>
+            </div>
+            <select id="settingThemeMode" class="form-select-sm">
+              <option value="dark">Dark Theme</option>
+              <option value="light">Light Theme</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Update Frequency</span>
+              <span class="setting-desc">Background polling rate</span>
+            </div>
+            <select id="settingPollingInterval" class="form-select-sm">
+              <option value="0.5">Every 30 secs (Ultra Fast)</option>
+              <option value="1">Every 1 min (Recommended)</option>
+              <option value="3">Every 3 mins</option>
+              <option value="5">Every 5 mins</option>
+              <option value="15">Every 15 mins</option>
+              <option value="30">Every 30 mins</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Audio Chime</span>
+              <span class="setting-desc">Play tone on target alert breach</span>
+            </div>
+            <label class="flat-switch">
+              <input type="checkbox" id="settingSoundEnabled" checked>
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Toolbar Badge</span>
+              <span class="setting-desc">Show live rate on browser icon</span>
+            </div>
+            <select id="settingBadgeMode" class="form-select-sm">
+              <option value="USD">Show USD Rate</option>
+              <option value="EUR">Show EUR Rate</option>
+              <option value="ROTATE">Alternate USD & EUR</option>
+              <option value="OFF">Badge Off</option>
+            </select>
+          </div>
+
+          <div class="modal-action-row">
+            <button id="btnTestAlert" class="btn-secondary">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span>Test Alert & Audio Chime</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Micro Footer -->
+    <footer class="app-footer">
+      <div class="footer-sync">
+        <span id="lastUpdatedText">Updated: Just now</span>
+        <span class="separator">•</span>
+        <span id="footerNextRun" class="footer-timer">Next in --s</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=INR" target="_blank" rel="noopener" class="source-link">USD XE ↗</a>
+        <span class="separator">•</span>
+        <a href="https://www.xe.com/currencyconverter/convert/?Amount=1&From=EUR&To=INR" target="_blank" rel="noopener" class="source-link">EUR XE ↗</a>
+      </div>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
