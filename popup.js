@@ -135,11 +135,15 @@ let currentAlerts = {
   eur: { enabled: false, target: 111.00, condition: '>=', triggered: false }
 };
 
+const DEFAULT_MULYA_TOKEN = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2NTkwMjJjODg3MzdjNTAwMTIzYzVlYzUiLCJpYXQiOjE3ODkzNTc3NjgsImV4cCI6MTc4OTQ0NDE2OH0.fITRCLb_Sk9VppM1E6EYnN-Gt1jmvRuozaPkQIrwVuqLVSoxgZifFJonSPKIFRCHhOo2VpdvIxccIw-8QpbE4fZMmna5ju773tVO9ppndXAzxvmPBveBFlaqN3_NvdfxG-uO_irHHknr1IBZi1jRsAjkK0gU7o0VT6Wruz6I3eT7sO7OaeDnC2kepAKANA93iIprgMpxjRX-o9Xnn2NcoKKxTJbLQFxjbNBiJWiI2CZV7fLACjpivnFd3nZwx_eqDYdorfu2Pv63eyOb6k2EIt5Sf0amriyoKxxokkino5RvbCMD73UkcyJDfvcLUuVYHjG4eniZSL_1DFuEHBtoBMHdj1XlHlaKwbNBnlvQZH1t6I04MG8NvhRzea-N0K7D96nKWMgCGCqnHMdNKJD9n2caK21dCPWCa3KkQ9SAJtLXy-So-cpyhj6Fxt42vnpJT4tC32NivDuhoV2Dwan9qIK12d1a9Tvk_8D_73a8FBOdZpFV93tUZUQgTMwZtFof5mmpOqCGXQNOGKxDCUFpMbKAJ_QngNpn-6cMJAcKE_NLRgwPoucT8VBy93b52UaFzNWdf1VAlrE95RIngrF2PrJ4417bVUx4zTUodsNKo0dQ-vHCCO6JXr5l_o10lNVo4eKKEi7EgiKJUSKIWjuLzHl89ehs1V-ZQuM9iqOTTpY';
+
 let currentSettings = {
   theme: 'dark',
   pollingInterval: 1,
   soundEnabled: true,
-  badgeMode: 'USD'
+  badgeMode: 'USD',
+  rateSource: 'XE',
+  mulyaToken: DEFAULT_MULYA_TOKEN
 };
 
 let rateHistory = [];
@@ -235,8 +239,11 @@ function initDOM() {
     'btnThemeToggle', 'settingThemeMode', 'popoverThemeLabel',
     'btnSoundToggle', 'settingSoundEnabled', 'popoverSoundLabel',
     'btnHeaderMenu', 'headerMenuPopover', 'popoverThemeToggle', 'popoverSoundToggle', 'popoverSettingsToggle',
-    'settingsDrawer', 'settingPollingInterval', 'settingBadgeMode', 'btnTestAlert', 'btnSettingsToggle', 'btnCloseSettings',
+    'settingsDrawer', 'settingRateSource', 'settingMulyaToken', 'btnToggleMulyaToken', 'mulyaTokenGroup', 'mulyaInfoNote',
+    'btnSaveSettings', 'saveSettingsFeedback',
+    'settingPollingInterval', 'settingBadgeMode', 'btnTestAlert', 'btnSettingsToggle', 'btnCloseSettings',
     'btnCopyRate', 'copyFeedback',
+    'headerStatusText', 'footerSourceBadge', 'footerSyncDot', 'footerLinkUsd', 'footerLinkEur', 'statsSourceTag',
     'mainPairLabel', 'mainBaseTag', 'mainChangeBadge', 'mainRateValue', 'inverseRateDisplay',
     'rangeLowVal', 'rangeHighVal', 'rangeMarker',
     'alertBox', 'alertBoxHeader', 'activeAlertToggle', 'activeConditionSelect', 'activeTargetInput', 'btnSaveAlert',
@@ -360,6 +367,7 @@ async function loadStateFromStorage() {
   }
 
   applyTheme(currentSettings.theme || 'dark');
+  renderSettingsUI();
   renderAll();
 }
 
@@ -380,6 +388,7 @@ function executeRenderAll() {
   updateConverter();
   renderSparkline();
   renderMarketStats();
+  renderSourceBranding();
   // renderSettingsUI() intentionally NOT called here — it is called only when settings
   // actually change (via the storage.onChanged handler), preventing needless re-render on
   // every rate update tick.
@@ -517,6 +526,7 @@ function setupHeaderMenu() {
     popSettings.addEventListener('click', () => {
       if (popover) popover.classList.add('hidden');
       if (btnMenu) btnMenu.setAttribute('aria-expanded', 'false');
+      renderSettingsUI();
       drawer.classList.remove('hidden');
     });
   }
@@ -628,8 +638,17 @@ function renderMainCanvas() {
   const low = isUsd ? (currentRates.low24hUsd || rate) : (currentRates.low24hEur || rate);
 
   // Labels
-  if (DOM.mainPairLabel) DOM.mainPairLabel.textContent = isUsd ? 'US Dollar to Indian Rupee' : 'Euro to Indian Rupee';
-  if (DOM.mainBaseTag) DOM.mainBaseTag.textContent = isUsd ? '1.00 USD' : '1.00 EUR';
+  const isMulyaEur = !isUsd && (currentRates.source === 'MULYA' || currentSettings.rateSource === 'MULYA');
+  if (DOM.mainPairLabel) {
+    if (isUsd) {
+      DOM.mainPairLabel.textContent = 'US Dollar to Indian Rupee';
+    } else {
+      DOM.mainPairLabel.textContent = isMulyaEur ? 'Euro to Indian Rupee (XE Fallback)' : 'Euro to Indian Rupee';
+    }
+  }
+  if (DOM.mainBaseTag) {
+    DOM.mainBaseTag.textContent = isUsd ? '1.00 USD' : (isMulyaEur ? '1.00 EUR (via XE)' : '1.00 EUR');
+  }
 
   // Delta Tag
   const delta = prevRate > 0 ? ((rate - prevRate) / prevRate) * 100 : 0;
@@ -685,7 +704,16 @@ function renderMainCanvas() {
 
   // Update Footer timestamp
   const diffSec = Math.floor((Date.now() - (currentRates.timestamp || Date.now())) / 1000);
-  if (DOM.lastUpdatedText) DOM.lastUpdatedText.textContent = diffSec < 15 ? 'Updated: Just now' : `Updated: ${diffSec}s ago`;
+  if (DOM.lastUpdatedText) {
+    if (diffSec < 15) {
+      DOM.lastUpdatedText.textContent = 'Just now';
+    } else if (diffSec < 60) {
+      DOM.lastUpdatedText.textContent = `${diffSec}s ago`;
+    } else {
+      const diffMin = Math.floor(diffSec / 60);
+      DOM.lastUpdatedText.textContent = `${diffMin}m ago`;
+    }
+  }
 }
 
 // Update Alert Box Collapsible State
@@ -1307,13 +1335,24 @@ function setupSettingsDrawer() {
   const btnClose = DOM.btnCloseSettings;
   const backdrop = drawer ? drawer.querySelector('.modal-backdrop') : null;
 
+  const rateSourceSelect = DOM.settingRateSource;
+  const mulyaTokenInput = DOM.settingMulyaToken;
+  const btnToggleToken = DOM.btnToggleMulyaToken;
+  const mulyaTokenGroup = DOM.mulyaTokenGroup;
+  const mulyaInfoNote = DOM.mulyaInfoNote;
+  const btnSave = DOM.btnSaveSettings;
+  const feedbackEl = DOM.saveSettingsFeedback;
+
   const pollSelect = DOM.settingPollingInterval;
   const soundToggle = DOM.settingSoundEnabled;
   const badgeSelect = DOM.settingBadgeMode;
   const btnTest = DOM.btnTestAlert;
 
   if (btnToggle && drawer) {
-    btnToggle.addEventListener('click', () => drawer.classList.toggle('hidden'));
+    btnToggle.addEventListener('click', () => {
+      renderSettingsUI();
+      drawer.classList.toggle('hidden');
+    });
   }
 
   if (btnClose && drawer) {
@@ -1324,11 +1363,93 @@ function setupSettingsDrawer() {
     backdrop.addEventListener('click', () => drawer.classList.add('hidden'));
   }
 
+  // Toggle contextual Mulya token UI on selection change
+  if (rateSourceSelect) {
+    rateSourceSelect.addEventListener('change', () => {
+      const isMulya = rateSourceSelect.value === 'MULYA';
+      if (mulyaTokenGroup) mulyaTokenGroup.classList.toggle('hidden', !isMulya);
+      if (mulyaInfoNote) mulyaInfoNote.classList.toggle('hidden', !isMulya);
+    });
+  }
+
+  // Eye toggle for Mulya token
+  if (btnToggleToken && mulyaTokenInput) {
+    btnToggleToken.addEventListener('click', () => {
+      const isPass = mulyaTokenInput.type === 'password';
+      mulyaTokenInput.type = isPass ? 'text' : 'password';
+      const iconOff = btnToggleToken.querySelector('.icon-eye-off');
+      const iconOn = btnToggleToken.querySelector('.icon-eye-on');
+      if (iconOff && iconOn) {
+        iconOff.classList.toggle('hidden', isPass);
+        iconOn.classList.toggle('hidden', !isPass);
+      }
+    });
+  }
+
+  // Explicit Save & Apply Provider Button
+  if (btnSave) {
+    btnSave.addEventListener('click', async () => {
+      // 1. Gather all inputs from drawer
+      if (rateSourceSelect) currentSettings.rateSource = rateSourceSelect.value;
+      if (mulyaTokenInput) currentSettings.mulyaToken = mulyaTokenInput.value.trim();
+      if (pollSelect) currentSettings.pollingInterval = parseFloat(pollSelect.value) || 1;
+      if (soundToggle) currentSettings.soundEnabled = soundToggle.checked;
+      if (badgeSelect) currentSettings.badgeMode = badgeSelect.value;
+
+      btnSave.classList.add('saving');
+      btnSave.disabled = true;
+
+      const providerLabel = rateSourceSelect 
+        ? rateSourceSelect.options[rateSourceSelect.selectedIndex].text.split('(')[0].trim() 
+        : 'Provider';
+
+      if (feedbackEl) {
+        feedbackEl.className = 'save-feedback-bar saving';
+        feedbackEl.textContent = `Saving & fetching rates from ${providerLabel}...`;
+        feedbackEl.classList.remove('hidden');
+      }
+
+      // 2. Persist in local storage
+      await appStorage.set({ settings: currentSettings });
+      renderSourceBranding();
+
+      // 3. Send to background with settings payload to force immediate fetch
+      appRuntime.sendMessage({
+        type: 'SAVE_SETTINGS_AND_FETCH',
+        settings: currentSettings
+      }, (res) => {
+        btnSave.classList.remove('saving');
+        btnSave.disabled = false;
+
+        if (res && res.success) {
+          if (res.rates && (res.rates.usdInr || res.rates.rates)) {
+            const fresh = res.rates.rates || res.rates;
+            currentRates = Object.assign(currentRates, fresh);
+            renderAll();
+          }
+          if (feedbackEl) {
+            feedbackEl.className = 'save-feedback-bar success';
+            feedbackEl.textContent = `✓ Saved! Rates updated via ${providerLabel}.`;
+            setTimeout(() => {
+              feedbackEl.classList.add('hidden');
+            }, 3000);
+          }
+          triggerRefresh(true);
+        } else {
+          if (feedbackEl) {
+            feedbackEl.className = 'save-feedback-bar error';
+            feedbackEl.textContent = `⚠️ ${res?.error || 'Failed to fetch rates from provider'}`;
+          }
+        }
+      });
+    });
+  }
+
   if (pollSelect) {
     pollSelect.addEventListener('change', async () => {
       currentSettings.pollingInterval = parseFloat(pollSelect.value) || 1;
       await appStorage.set({ settings: currentSettings });
-      appRuntime.sendMessage({ type: 'UPDATE_SETTINGS' });
+      appRuntime.sendMessage({ type: 'UPDATE_SETTINGS', settings: currentSettings });
     });
   }
 
@@ -1349,7 +1470,7 @@ function setupSettingsDrawer() {
     badgeSelect.addEventListener('change', async () => {
       currentSettings.badgeMode = badgeSelect.value;
       await appStorage.set({ settings: currentSettings });
-      appRuntime.sendMessage({ type: 'UPDATE_SETTINGS' });
+      appRuntime.sendMessage({ type: 'UPDATE_SETTINGS', settings: currentSettings });
     });
   }
 
@@ -1361,15 +1482,95 @@ function setupSettingsDrawer() {
 }
 
 function renderSettingsUI() {
+  const rateSourceSelect = DOM.settingRateSource;
+  const mulyaTokenInput = DOM.settingMulyaToken;
+  const mulyaTokenGroup = DOM.mulyaTokenGroup;
+  const mulyaInfoNote = DOM.mulyaInfoNote;
+
   const pollSelect = DOM.settingPollingInterval;
   const soundToggle = DOM.settingSoundEnabled;
   const badgeSelect = DOM.settingBadgeMode;
   const themeSelect = DOM.settingThemeMode;
 
+  if (rateSourceSelect) rateSourceSelect.value = currentSettings.rateSource || 'XE';
+  if (mulyaTokenInput) mulyaTokenInput.value = currentSettings.mulyaToken || DEFAULT_MULYA_TOKEN;
+  const isMulya = (currentSettings.rateSource || 'XE') === 'MULYA';
+  if (mulyaTokenGroup) mulyaTokenGroup.classList.toggle('hidden', !isMulya);
+  if (mulyaInfoNote) mulyaInfoNote.classList.toggle('hidden', !isMulya);
+
   if (pollSelect) pollSelect.value = String(currentSettings.pollingInterval || '1');
   if (soundToggle) soundToggle.checked = currentSettings.soundEnabled !== false;
   if (badgeSelect) badgeSelect.value = currentSettings.badgeMode || 'USD';
   if (themeSelect) themeSelect.value = currentSettings.theme || 'dark';
+
+  renderSourceBranding();
+}
+
+// Provider Branding & Link Routing
+function renderSourceBranding() {
+  const activeSource = currentRates.source || currentSettings.rateSource || 'XE';
+
+  // 1. Header Status Text
+  if (DOM.headerStatusText) {
+    if (activeSource === 'GOOGLE_FINANCE') {
+      DOM.headerStatusText.textContent = 'Google Finance • Live';
+    } else if (activeSource === 'MULYA') {
+      DOM.headerStatusText.textContent = 'Mulya.co • Live';
+    } else {
+      DOM.headerStatusText.textContent = 'XE Mid-Market • Live';
+    }
+  }
+
+  // 2. Market Stats Footer Source Note
+  if (DOM.statsSourceTag) {
+    if (activeSource === 'GOOGLE_FINANCE') {
+      DOM.statsSourceTag.textContent = 'Data source: Google Finance Live Feed';
+    } else if (activeSource === 'MULYA') {
+      DOM.statsSourceTag.textContent = 'Data source: Mulya.co MMR Feed (EUR via XE)';
+    } else {
+      DOM.statsSourceTag.textContent = 'Data source: XE Live Midmarket Exchange Feed';
+    }
+  }
+
+  // 3. Institutional Footer Source Badge & Link Routing
+  if (DOM.footerSourceBadge) {
+    if (activeSource === 'GOOGLE_FINANCE') {
+      DOM.footerSourceBadge.textContent = 'Google Finance';
+      DOM.footerSourceBadge.title = 'Live feed powered by Google Finance';
+    } else if (activeSource === 'MULYA') {
+      DOM.footerSourceBadge.textContent = 'Mulya.co';
+      DOM.footerSourceBadge.title = 'Live USD feed powered by Mulya MMR (EUR paired via XE)';
+    } else {
+      DOM.footerSourceBadge.textContent = 'XE';
+      DOM.footerSourceBadge.title = 'Live feed powered by XE Mid-Market';
+    }
+  }
+
+  if (DOM.footerLinkUsd) {
+    if (activeSource === 'GOOGLE_FINANCE') {
+      DOM.footerLinkUsd.href = 'https://www.google.com/finance/quote/USD-INR';
+      DOM.footerLinkUsd.title = 'Open live USD/INR on Google Finance ↗';
+    } else if (activeSource === 'MULYA') {
+      DOM.footerLinkUsd.href = 'https://app.mulya.co/';
+      DOM.footerLinkUsd.title = 'Open live USD/INR on Mulya.co ↗';
+    } else {
+      DOM.footerLinkUsd.href = 'https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=INR';
+      DOM.footerLinkUsd.title = 'Open live USD/INR on XE ↗';
+    }
+  }
+
+  if (DOM.footerLinkEur) {
+    if (activeSource === 'GOOGLE_FINANCE') {
+      DOM.footerLinkEur.href = 'https://www.google.com/finance/quote/EUR-INR';
+      DOM.footerLinkEur.title = 'Open live EUR/INR on Google Finance ↗';
+    } else if (activeSource === 'MULYA') {
+      DOM.footerLinkEur.href = 'https://www.xe.com/currencyconverter/convert/?Amount=1&From=EUR&To=INR';
+      DOM.footerLinkEur.title = 'Open live EUR/INR on XE (Mulya is USD only) ↗';
+    } else {
+      DOM.footerLinkEur.href = 'https://www.xe.com/currencyconverter/convert/?Amount=1&From=EUR&To=INR';
+      DOM.footerLinkEur.title = 'Open live EUR/INR on XE ↗';
+    }
+  }
 }
 
 // Manual Refresh Button
@@ -1387,8 +1588,14 @@ function triggerRefresh(isUserClick = true) {
   if (isUserClick && btnRefresh) {
     btnRefresh.classList.add('spinning');
   }
+  if (DOM.footerSyncDot) {
+    DOM.footerSyncDot.classList.add('syncing');
+  }
 
   appRuntime.sendMessage({ type: 'REFRESH_RATES' }, (res) => {
+    if (DOM.footerSyncDot) {
+      DOM.footerSyncDot.classList.remove('syncing');
+    }
     if (isUserClick && btnRefresh) {
       setTimeout(() => {
         btnRefresh.classList.remove('spinning');
@@ -1420,6 +1627,19 @@ function updateNextRunCountdown() {
   const chipText = DOM.countdownChipText;
   const footerText = DOM.footerNextRun;
 
+  // Real-time update for relative last-synced timestamp
+  if (DOM.lastUpdatedText && currentRates.timestamp) {
+    const diffSec = Math.floor((Date.now() - currentRates.timestamp) / 1000);
+    if (diffSec < 15) {
+      DOM.lastUpdatedText.textContent = 'Just now';
+    } else if (diffSec < 60) {
+      DOM.lastUpdatedText.textContent = `${diffSec}s ago`;
+    } else {
+      const diffMin = Math.floor(diffSec / 60);
+      DOM.lastUpdatedText.textContent = `${diffMin}m ago`;
+    }
+  }
+
   const intervalMinutes = parseFloat(currentSettings.pollingInterval) || 1;
   const intervalMs = Math.max(15000, Math.round(intervalMinutes * 60 * 1000));
 
@@ -1432,7 +1652,7 @@ function updateNextRunCountdown() {
     if (lastCountdownText !== 'Syncing...') {
       lastCountdownText = 'Syncing...';
       if (chipText) chipText.textContent = 'Syncing...';
-      if (footerText) footerText.textContent = 'Next in: Syncing...';
+      if (footerText) footerText.textContent = 'Syncing...';
     }
     currentRates.nextRunAt = Date.now() + intervalMs;
     triggerRefresh(false);
@@ -1452,6 +1672,6 @@ function updateNextRunCountdown() {
   if (formatted !== lastCountdownText) {
     lastCountdownText = formatted;
     if (chipText) chipText.textContent = formatted;
-    if (footerText) footerText.textContent = 'Next in ' + formatted;
+    if (footerText) footerText.textContent = formatted;
   }
 }

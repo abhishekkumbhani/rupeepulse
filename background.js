@@ -2,6 +2,10 @@
 
 const XE_API_URL = 'https://www.xe.com/api/protected/midmarket-converter/';
 const XE_AUTH_HEADER = 'Basic bG9kZXN0YXI6cHVnc25heA==';
+const MULYA_API_URL = 'https://app.mulya.co/api/user/mmr';
+const DEFAULT_MULYA_TOKEN = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2NTkwMjJjODg3MzdjNTAwMTIzYzVlYzUiLCJpYXQiOjE3ODkzNTc3NjgsImV4cCI6MTc4OTQ0NDE2OH0.fITRCLb_Sk9VppM1E6EYnN-Gt1jmvRuozaPkQIrwVuqLVSoxgZifFJonSPKIFRCHhOo2VpdvIxccIw-8QpbE4fZMmna5ju773tVO9ppndXAzxvmPBveBFlaqN3_NvdfxG-uO_irHHknr1IBZi1jRsAjkK0gU7o0VT6Wruz6I3eT7sO7OaeDnC2kepAKANA93iIprgMpxjRX-o9Xnn2NcoKKxTJbLQFxjbNBiJWiI2CZV7fLACjpivnFd3nZwx_eqDYdorfu2Pv63eyOb6k2EIt5Sf0amriyoKxxokkino5RvbCMD73UkcyJDfvcLUuVYHjG4eniZSL_1DFuEHBtoBMHdj1XlHlaKwbNBnlvQZH1t6I04MG8NvhRzea-N0K7D96nKWMgCGCqnHMdNKJD9n2caK21dCPWCa3KkQ9SAJtLXy-So-cpyhj6Fxt42vnpJT4tC32NivDuhoV2Dwan9qIK12d1a9Tvk_8D_73a8FBOdZpFV93tUZUQgTMwZtFof5mmpOqCGXQNOGKxDCUFpMbKAJ_QngNpn-6cMJAcKE_NLRgwPoucT8VBy93b52UaFzNWdf1VAlrE95RIngrF2PrJ4417bVUx4zTUodsNKo0dQ-vHCCO6JXr5l_o10lNVo4eKKEi7EgiKJUSKIWjuLzHl89ehs1V-ZQuM9iqOTTpY';
+const GOOGLE_FINANCE_USD_URL = 'https://www.google.com/finance/beta/quote/USD-INR';
+const GOOGLE_FINANCE_EUR_URL = 'https://www.google.com/finance/beta/quote/EUR-INR';
 const ALARM_NAME = 'rate-poll-alarm';
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 
@@ -18,7 +22,9 @@ const DEFAULT_STATE = {
     high24hUsd: 0,
     low24hUsd: 0,
     high24hEur: 0,
-    low24hEur: 0
+    low24hEur: 0,
+    source: 'XE',
+    eurFallback: false
   },
   history: [], // [{ time: number, usd: number, eur: number }]
   alerts: {
@@ -38,6 +44,8 @@ const DEFAULT_STATE = {
     }
   },
   settings: {
+    rateSource: 'XE', // 'XE', 'MULYA', 'GOOGLE_FINANCE'
+    mulyaToken: DEFAULT_MULYA_TOKEN,
     pollingInterval: 1, // minutes (Chrome alarm minimum is 1 min)
     soundEnabled: true,
     badgeMode: 'USD' // 'USD', 'EUR', 'ROTATE', 'OFF'
@@ -47,10 +55,11 @@ const DEFAULT_STATE = {
 // Lifecycle: Installation & Startup
 chrome.runtime.onInstalled.addListener(async () => {
   const existing = await chrome.storage.local.get(['rates', 'alerts', 'settings', 'history']);
+  const mergedSettings = Object.assign({}, DEFAULT_STATE.settings, existing.settings || {});
   const merged = {
-    rates: existing.rates || DEFAULT_STATE.rates,
-    alerts: existing.alerts || DEFAULT_STATE.alerts,
-    settings: existing.settings || DEFAULT_STATE.settings,
+    rates: Object.assign({}, DEFAULT_STATE.rates, existing.rates || {}),
+    alerts: Object.assign({}, DEFAULT_STATE.alerts, existing.alerts || {}),
+    settings: mergedSettings,
     history: existing.history || DEFAULT_STATE.history
   };
   await chrome.storage.local.set(merged);
@@ -61,7 +70,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.runtime.onStartup.addListener(async () => {
   const { settings } = await chrome.storage.local.get('settings');
-  setupAlarm(settings?.pollingInterval || 1);
+  const mergedSettings = Object.assign({}, DEFAULT_STATE.settings, settings || {});
+  setupAlarm(mergedSettings.pollingInterval || 1);
   fetchLatestRates();
 });
 
@@ -100,7 +110,186 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// Fetch rates from XE Midmarket API (Concurrency Guarded)
+// ============================================================================
+// Multi-Source Rate Providers: XE, Mulya.co, Google Finance
+// ============================================================================
+
+// Provider 1: XE Midmarket API
+async function fetchRatesXE() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  const response = await fetch(XE_API_URL, {
+    method: 'GET',
+    headers: {
+      'Authorization': XE_AUTH_HEADER,
+      'Accept': 'application/json, text/plain, */*',
+      'Cache-Control': 'no-cache'
+    },
+    signal: controller.signal
+  });
+  clearTimeout(timeoutId);
+
+  if (!response.ok) {
+    throw new Error(`XE API responded with HTTP status ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (!data || !data.rates || !data.rates.INR) {
+    throw new Error('Invalid rate payload received from XE');
+  }
+
+  const usdInr = Number(data.rates.INR);
+  const eurRateAgainstUsd = Number(data.rates.EUR);
+  const eurInr = (eurRateAgainstUsd && eurRateAgainstUsd > 0)
+    ? Number(usdInr / eurRateAgainstUsd)
+    : 0;
+
+  return {
+    usdInr,
+    eurInr,
+    timestamp: data.timestamp || Date.now(),
+    source: 'XE',
+    eurFallback: false
+  };
+}
+
+// Provider 2: Mulya.co (USD Only with Bearer Auth)
+async function fetchRatesMulya(token) {
+  const cleanToken = (token || DEFAULT_MULYA_TOKEN).trim();
+  const authHeader = cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  const response = await fetch(MULYA_API_URL, {
+    method: 'GET',
+    headers: {
+      'Authorization': authHeader,
+      'Accept': 'application/json',
+      'Cache-Control': 'no-cache'
+    },
+    signal: controller.signal
+  });
+  clearTimeout(timeoutId);
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Mulya token expired or unauthorized (401). Please update token in Settings.');
+    }
+    throw new Error(`Mulya API responded with HTTP status ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (!data?.details?.mid_market) {
+    throw new Error('Invalid rate payload received from Mulya.co');
+  }
+
+  const usdInr = parseFloat(data.details.mid_market);
+  const timestamp = data.details.valid_from ? data.details.valid_from * 1000 : Date.now();
+
+  // Mulya is USD only — fetch EUR from XE as transparent fallback
+  let eurInr = 0;
+  try {
+    const xeFallback = await fetchRatesXE();
+    eurInr = xeFallback.eurInr;
+  } catch (e) {
+    console.warn('EUR fallback from XE failed for Mulya:', e.message);
+  }
+
+  return {
+    usdInr,
+    eurInr,
+    timestamp,
+    source: 'MULYA',
+    eurFallback: true
+  };
+}
+
+// Provider 3: Google Finance (Live USD & EUR)
+async function fetchRatesGoogleFinance() {
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control': 'no-cache'
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  let res;
+  try {
+    res = await fetch(GOOGLE_FINANCE_USD_URL, { redirect: 'follow', headers, signal: controller.signal });
+  } catch (e) {
+    res = await fetch('https://g.co/finance/USD-INR', { redirect: 'follow', headers, signal: controller.signal });
+  }
+  clearTimeout(timeoutId);
+
+  if (!res.ok) {
+    throw new Error(`Google Finance responded with HTTP status ${res.status}`);
+  }
+
+  const html = await res.text();
+  let usdInr = null;
+  let eurInr = null;
+  let timestamp = Date.now();
+
+  // Tier 1: AF_initDataCallback structured array (ds:2)
+  try {
+    const afMatch = html.match(/AF_initDataCallback\s*\(\s*\{[^}]*key:\s*'ds:2'[^}]*data:\s*(\[[\s\S]*?\])\s*,\s*sideChannel/);
+    if (afMatch) {
+      const parsed = JSON.parse(afMatch[1]);
+      const item = parsed?.[0]?.[0]?.[0];
+      if (item && Array.isArray(item) && item[5] && item[5][0]) {
+        usdInr = Number(item[5][0]);
+        if (item[11] && item[11][0]) timestamp = Number(item[11][0]) * 1000;
+      }
+    }
+  } catch (e) {}
+
+  // Tier 2: Beta DOM jsname="Pdsbrc"
+  if (!usdInr) {
+    const m = html.match(/(?:United States Dollar\s*\/\s*Indian Rupee|USD\s*\/\s*INR)[\s\S]{0,350}?jsname="Pdsbrc"[^>]*><span>([0-9.]+)<\/span>/i);
+    if (m) usdInr = parseFloat(m[1]);
+  }
+
+  // Tier 3: Classic DOM
+  if (!usdInr) {
+    const m = html.match(/data-last-price="([0-9.]+)"/i) || html.match(/class="[^"]*YMlKec[^"]*">₹?([0-9.]+)</i);
+    if (m) usdInr = parseFloat(m[1]);
+  }
+
+  if (!usdInr) {
+    throw new Error('Could not extract USD/INR rate from Google Finance');
+  }
+
+  // EUR from related quotes table on USD page
+  const eurMatch = html.match(/EUR\s*\/\s*INR<\/bdi>[\s\S]{0,120}?jsname="Pdsbrc"[^>]*><span>([0-9.]+)<\/span>/i);
+  if (eurMatch) {
+    eurInr = parseFloat(eurMatch[1]);
+  } else {
+    // Dedicated EUR fetch
+    try {
+      const eurRes = await fetch(GOOGLE_FINANCE_EUR_URL, { redirect: 'follow', headers });
+      if (eurRes.ok) {
+        const eurHtml = await eurRes.text();
+        const mEur = eurHtml.match(/(?:Euro\s*\/\s*Indian Rupee|EUR\s*\/\s*INR)[\s\S]{0,350}?jsname="Pdsbrc"[^>]*><span>([0-9.]+)<\/span>/i)
+          || eurHtml.match(/data-last-price="([0-9.]+)"/i);
+        if (mEur) eurInr = parseFloat(mEur[1]);
+      }
+    } catch (e) {}
+  }
+
+  return {
+    usdInr,
+    eurInr: eurInr || 0,
+    timestamp,
+    source: 'GOOGLE_FINANCE',
+    eurFallback: false
+  };
+}
+
+// Fetch rates from active provider (Concurrency Guarded)
 let isFetching = false;
 let consecutiveErrors = 0;
 
@@ -109,42 +298,27 @@ async function fetchLatestRates() {
   isFetching = true;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s network timeout
+    const stored = await chrome.storage.local.get(['settings']);
+    const currentSettings = stored.settings || DEFAULT_STATE.settings;
+    const activeSource = currentSettings.rateSource || 'XE';
 
-    const response = await fetch(XE_API_URL, {
-      method: 'GET',
-      headers: {
-        'Authorization': XE_AUTH_HEADER,
-        'Accept': 'application/json, text/plain, */*',
-        'Cache-Control': 'no-cache'
-      },
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`API responded with HTTP status ${response.status}`);
+    let rateResult;
+    if (activeSource === 'MULYA') {
+      rateResult = await fetchRatesMulya(currentSettings.mulyaToken);
+    } else if (activeSource === 'GOOGLE_FINANCE') {
+      rateResult = await fetchRatesGoogleFinance();
+    } else {
+      rateResult = await fetchRatesXE();
     }
 
-    const data = await response.json();
-    if (!data || !data.rates || !data.rates.INR) {
-      throw new Error('Invalid rate payload received from XE');
-    }
-
-    const usdInr = Number(data.rates.INR);
-    const eurRateAgainstUsd = Number(data.rates.EUR);
-    const eurInr = (eurRateAgainstUsd && eurRateAgainstUsd > 0) 
-      ? Number(usdInr / eurRateAgainstUsd) 
-      : 0;
+    const { usdInr, eurInr, timestamp, source, eurFallback } = rateResult;
 
     consecutiveErrors = 0;
-    await processRates(usdInr, eurInr, data.timestamp || Date.now());
-    return { success: true, usdInr, eurInr };
+    await processRates(usdInr, eurInr, timestamp, source, eurFallback);
+    return { success: true, usdInr, eurInr, source, eurFallback };
   } catch (error) {
     consecutiveErrors++;
     console.warn(`RupeePulse fetch error (${consecutiveErrors}):`, error.message);
-    // Mark badge with '!' if fetch failed
     chrome.action.setBadgeText({ text: '!' });
     chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
     return { success: false, error: error.message };
@@ -154,7 +328,7 @@ async function fetchLatestRates() {
 }
 
 // Process new rates, check targets, and persist data
-async function processRates(usdInr, eurInr, timestamp) {
+async function processRates(usdInr, eurInr, timestamp, source = 'XE', eurFallback = false) {
   // Cache a single timestamp for the entire processing cycle (avoids 4+ Date.now() calls)
   const now = Date.now();
   const stored = await chrome.storage.local.get(['rates', 'alerts', 'settings', 'history']);
@@ -200,6 +374,8 @@ async function processRates(usdInr, eurInr, timestamp) {
     lastFetchedAt: now,
     nextRunAt,
     apiTimestamp: timestamp,
+    source: source || 'XE',
+    eurFallback: !!eurFallback,
     prevUsdInr: (prevRates.usdInr && prevRates.usdInr !== usdInr) ? prevRates.usdInr : (prevRates.prevUsdInr || usdInr),
     prevEurInr: (prevRates.eurInr && prevRates.eurInr !== eurInr) ? prevRates.eurInr : (prevRates.prevEurInr || eurInr),
     trendUsd,
@@ -263,7 +439,8 @@ async function checkTargetAlerts(rates, alerts, soundEnabled) {
           id: `notif-usd-${ts}`,
           title: `🎯 USD/INR Target Reached: ₹${rates.usdInr.toFixed(2)}`,
           message: `USD to INR is now ₹${rates.usdInr.toFixed(4)} (Target: ${updated.usd.condition} ₹${Number(updated.usd.target).toFixed(2)})`,
-          currency: 'USD'
+          currency: 'USD',
+          source: rates.source || 'XE'
         }, soundEnabled);
 
         updated.usd.triggered = true;
@@ -289,7 +466,8 @@ async function checkTargetAlerts(rates, alerts, soundEnabled) {
           id: `notif-eur-${ts}`,
           title: `🎯 EUR/INR Target Reached: ₹${rates.eurInr.toFixed(2)}`,
           message: `EUR to INR is now ₹${rates.eurInr.toFixed(4)} (Target: ${updated.eur.condition} ₹${Number(updated.eur.target).toFixed(2)})`,
-          currency: 'EUR'
+          currency: 'EUR',
+          source: rates.source || 'XE'
         }, soundEnabled);
 
         updated.eur.triggered = true;
@@ -304,8 +482,30 @@ async function checkTargetAlerts(rates, alerts, soundEnabled) {
   return updated;
 }
 
+// Dynamic Provider Helper URLs & Display Names
+function getProviderUrl(source, currency) {
+  if (source === 'GOOGLE_FINANCE') {
+    return currency === 'EUR'
+      ? 'https://www.google.com/finance/quote/EUR-INR'
+      : 'https://www.google.com/finance/quote/USD-INR';
+  }
+  if (source === 'MULYA') {
+    return currency === 'EUR'
+      ? 'https://www.xe.com/currencyconverter/convert/?Amount=1&From=EUR&To=INR'
+      : 'https://app.mulya.co/';
+  }
+  return `https://www.xe.com/currencyconverter/convert/?Amount=1&From=${currency}&To=INR`;
+}
+
+function getProviderName(source) {
+  if (source === 'GOOGLE_FINANCE') return 'Google Finance';
+  if (source === 'MULYA') return 'Mulya.co';
+  return 'XE';
+}
+
 // Trigger Chrome Desktop Notification & Chime
-async function triggerNotification({ id, title, message, currency }, soundEnabled) {
+async function triggerNotification({ id, title, message, currency, source = 'XE' }, soundEnabled) {
+  const providerName = getProviderName(source);
   chrome.notifications.create(id, {
     type: 'basic',
     iconUrl: 'icons/icon-128.png',
@@ -314,7 +514,7 @@ async function triggerNotification({ id, title, message, currency }, soundEnable
     priority: 2,
     requireInteraction: true,
     buttons: [
-      { title: `View ${currency}/INR on XE` },
+      { title: `View on ${providerName}` },
       { title: 'Dismiss' }
     ]
   });
@@ -325,22 +525,20 @@ async function triggerNotification({ id, title, message, currency }, soundEnable
 }
 
 // Handle notification button clicks & notification body clicks
-chrome.notifications.onClicked.addListener((notifId) => {
-  if (notifId.includes('usd')) {
-    chrome.tabs.create({ url: 'https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=INR' });
-  } else if (notifId.includes('eur')) {
-    chrome.tabs.create({ url: 'https://www.xe.com/currencyconverter/convert/?Amount=1&From=EUR&To=INR' });
-  }
+chrome.notifications.onClicked.addListener(async (notifId) => {
+  const { rates, settings } = await chrome.storage.local.get(['rates', 'settings']);
+  const source = rates?.source || settings?.rateSource || 'XE';
+  const currency = notifId.includes('eur') ? 'EUR' : 'USD';
+  chrome.tabs.create({ url: getProviderUrl(source, currency) });
   chrome.notifications.clear(notifId);
 });
 
-chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
+chrome.notifications.onButtonClicked.addListener(async (notifId, buttonIndex) => {
   if (buttonIndex === 0) {
-    if (notifId.includes('usd')) {
-      chrome.tabs.create({ url: 'https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=INR' });
-    } else if (notifId.includes('eur')) {
-      chrome.tabs.create({ url: 'https://www.xe.com/currencyconverter/convert/?Amount=1&From=EUR&To=INR' });
-    }
+    const { rates, settings } = await chrome.storage.local.get(['rates', 'settings']);
+    const source = rates?.source || settings?.rateSource || 'XE';
+    const currency = notifId.includes('eur') ? 'EUR' : 'USD';
+    chrome.tabs.create({ url: getProviderUrl(source, currency) });
   }
   chrome.notifications.clear(notifId);
 });
@@ -436,14 +634,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
-  if (message.type === 'UPDATE_SETTINGS') {
-    chrome.storage.local.get(['settings', 'rates'], ({ settings, rates }) => {
-      setupAlarm(settings?.pollingInterval || 1);
-      if (rates) {
-        updateBadge(rates, settings?.badgeMode || 'USD');
+  if (message.type === 'UPDATE_SETTINGS' || message.type === 'SAVE_SETTINGS_AND_FETCH') {
+    (async () => {
+      try {
+        if (message.settings) {
+          const current = (await chrome.storage.local.get('settings'))?.settings || {};
+          const updatedSettings = Object.assign({}, DEFAULT_STATE.settings, current, message.settings);
+          await chrome.storage.local.set({ settings: updatedSettings });
+          setupAlarm(updatedSettings.pollingInterval || 1);
+        }
+        const { rates, settings } = await chrome.storage.local.get(['rates', 'settings']);
+        if (rates) {
+          updateBadge(rates, settings?.badgeMode || 'USD');
+        }
+        // Force immediate live fetch from the saved provider
+        const rateResult = await fetchLatestRates();
+        sendResponse({ success: true, rates: rateResult });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
       }
-    });
-    sendResponse({ success: true });
+    })();
+    return true;
   }
 
   if (message.type === 'TEST_ALERT') {
@@ -454,7 +665,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         id: `test-notif-${Date.now()}`,
         title: `🔔 Test Alert: ${cur}/INR is ₹${rateVal.toFixed(2)}`,
         message: `Your RupeePulse alerts are working! (Test triggered)`,
-        currency: cur
+        currency: cur,
+        source: rates?.source || settings?.rateSource || 'XE'
       }, settings?.soundEnabled !== false);
       sendResponse({ success: true });
     });

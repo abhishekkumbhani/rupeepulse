@@ -19,7 +19,8 @@ A **production-ready**, zero-dependency Chrome extension that delivers live mid-
 
 | Feature | Details |
 |---|---|
-| **Live Rates** | USD/INR & EUR/INR sourced from XE mid-market feed, auto-refreshed (default: every 30s–1min) |
+| **Live Rates** | Real-time USD/INR & EUR/INR from your choice of **XE Mid-Market**, **Mulya.co** (USD only), or **Google Finance** (Live Feed) |
+| **Multi-Source Engine** | Switch providers anytime in Settings. Dynamic UI branding, provider links, and automatic fallback handling |
 | **Interactive Sparkline** | 8 timeframe filters (5m · 10m · 30m · 1h · 2h · 6h · 12h · 24h Today). Live pulse dot at current position. Hover crosshair with exact price + timestamp |
 | **Price Target Alerts** | Set ≥ or ≤ targets per currency. Chrome desktop notification + audio chime on breach. Collapsible UI |
 | **Currency Converter** | 3-way: USD ⇄ EUR ⇄ INR. Quick preset chips (100 · 500 · 1,000 · 5,000). Live mid-market formula |
@@ -29,6 +30,29 @@ A **production-ready**, zero-dependency Chrome extension that delivers live mid-
 | **Premium UI** | Dark & light themes · Plus Jakarta Sans typography · Tabular numerals · Zero neon · Institutional design |
 | **One-Click Copy** | Copy exact 4-decimal rate to clipboard with animated confirmation |
 | **Inverse Rate** | Live inverse glance (e.g., `1 INR = $0.01050 USD`) in the hero card |
+
+---
+
+## 🌐 Supported Rate Providers
+
+RupeePulse lets you switch between 3 real-time rate sources from **Preferences**:
+
+1. **XE Mid-Market (Default)**:
+   - Sourced directly from XE's protected mid-market converter.
+   - Provides both USD/INR and EUR/INR mid-market rates simultaneously.
+
+2. **Mulya.co (USD Only • Live MMR Feed)**:
+   - Real-time mid-market rate from `https://app.mulya.co/api/user/mmr`.
+   - Uses Bearer JWT authentication (pre-configured, editable directly in Settings).
+   - Because Mulya's API provides USD only, EUR/INR seamlessly pairs via XE fallback with clear UI indicators.
+
+3. **Google Finance (Live Feed)**:
+   - Real-time rate extraction directly from Google Finance beta (`https://www.google.com/finance/beta/quote/USD-INR` and `EUR-INR`).
+   - Uses a resilient **3-tier parser**:
+     - *Tier 1*: Native Google Finance `AF_initDataCallback` structured server data (`ds:2`).
+     - *Tier 2*: Google Finance Beta DOM extraction (`jsname="Pdsbrc"`).
+     - *Tier 3*: Classic DOM fallback (`data-last-price` and `YMlKec fxKbKc`).
+     - Parallel fallback for EUR/INR quote pages.
 
 ---
 
@@ -52,7 +76,7 @@ A **production-ready**, zero-dependency Chrome extension that delivers live mid-
 
 5. The **RupeePulse** icon will appear in your Chrome toolbar. Pin it for quick access.
 
-> **Note:** The extension fetches live rates from `https://www.xe.com`. Internet connection required.
+> **Note:** Internet connection required. Requests are made only to the active provider (XE, Mulya.co, or Google Finance).
 
 ---
 
@@ -60,11 +84,11 @@ A **production-ready**, zero-dependency Chrome extension that delivers live mid-
 
 ```
 rupeepulse/
-├── manifest.json          # Chrome Extension Manifest V3
-├── background.js          # Service worker: polling, alerts, badge, storage
-├── popup.html             # Extension popup UI (CSP-protected)
-├── popup.css              # Design system: dark/light themes, animations
-├── popup.js               # Popup controller: DOM cache, rendering, chart
+├── manifest.json          # Chrome Extension Manifest V3 (multi-host permissions)
+├── background.js          # Multi-source service worker: XE, Mulya, Google Finance
+├── popup.html             # Extension popup UI (CSP-protected, provider drawer)
+├── popup.css              # Design system: dark/light themes, provider controls
+├── popup.js               # Popup controller: DOM cache, dynamic branding, charts
 ├── offscreen.html         # Offscreen document host for audio
 ├── offscreen.js           # Web Audio API chime synthesizer
 ├── icons/                 # Extension icons (16/32/48/128px)
@@ -79,28 +103,19 @@ rupeepulse/
 
 ### Background Service Worker (`background.js`)
 - Runs as a **Manifest V3 service worker** (no persistent background page)
+- Implements modular fetchers for XE, Mulya.co, and Google Finance
+- Dynamically routes requests based on user preference in `chrome.storage.local`
 - Uses `chrome.alarms` for periodic polling (survives SW idle/termination)
 - A secondary `setInterval` heartbeat keeps rates fresh when the SW is awake
-- `isFetching` concurrency lock + 8-second `AbortController` prevent overlapping/hung requests
+- `isFetching` concurrency lock + network timeouts prevent hung requests
 - Rolling 24-hour history capped at **720 points** (~25 KB) to keep `chrome.storage.local` I/O minimal
-- Uses `structuredClone()` for fast deep-copies instead of `JSON.parse(JSON.stringify())`
-- Single `Date.now()` call cached per processing cycle (avoids 4+ redundant clock queries)
-
-### Popup Controller (`popup.js`)
-- All **40+ DOM elements cached once** at startup in an immutable `DOM` map — zero tree traversals in frame callbacks
-- `renderAll()` and `renderSparkline()` scheduled via **`requestAnimationFrame` debouncers** — multiple rapid storage events merge into a single 60fps paint frame
-- Sparkline `mousemove`/`touchmove` throttled with rAF — locked to display refresh rate
-- Icon NodeLists cached once after `initDOM()` — `applyTheme()` and `updateSoundIndicators()` never re-walk the DOM
-- SVG gradient stops cached in `DOM` — no `querySelectorAll` on the sparkline hot path
-- Chart hover coordinates in a **module-level variable** (not stored on a DOM node)
-- `updateNextRunCountdown()` uses a **value-changed guard** — only writes to DOM when the string changes
+- Structured deep cloning and cached clock queries
 
 ### Security Model
-- **Permissions**: `alarms`, `storage`, `notifications`, `offscreen`, `tabs` — minimal and declared
-- **Host permissions**: `https://www.xe.com/*` only
-- **CSP**: `script-src 'self'` blocks eval and inline scripts
+- **Permissions**: `alarms`, `storage`, `notifications`, `offscreen`, `tabs`
+- **Host permissions**: `https://www.xe.com/*`, `https://app.mulya.co/*`, `https://www.google.com/*`, `https://g.co/*`
+- **CSP**: Restricted `connect-src` to official provider domains; `script-src 'self'` blocks eval and remote code
 - **No third-party JS**: Zero npm dependencies, zero CDN-loaded scripts
-- **No user data collected**: Only rates and preferences stored locally
 
 ---
 
@@ -110,6 +125,8 @@ All settings persist in `chrome.storage.local` and are accessible from **Prefere
 
 | Setting | Options | Default |
 |---|---|---|
+| Rate Provider | XE Mid-Market · Mulya.co · Google Finance | XE Mid-Market |
+| Mulya API Token | Bearer JWT with show/hide toggle | Pre-configured |
 | Appearance | Dark / Light | Dark |
 | Update Frequency | 30s · 1min · 3min · 5min · 15min · 30min | 1 min |
 | Audio Chime | On / Muted | On |

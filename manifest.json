@@ -32,6 +32,9 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://www.xe.com/*"
+    "https://www.xe.com/*",
+    "https://app.mulya.co/*",
+    "https://www.google.com/*",
+    "https://g.co/*"
   ]
 }
